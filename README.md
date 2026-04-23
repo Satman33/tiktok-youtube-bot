@@ -134,6 +134,7 @@ Age-restricted or authenticated YouTube videos require `cookies.txt`.
 
 - Keep `cookies.txt` out of Git
 - Mount it in Docker or place it in project root
+- Do not mount it read-only in Docker, because `yt-dlp` may update it during runtime
 - Refresh it when YouTube invalidates the session
 
 ## Before Pushing to Git

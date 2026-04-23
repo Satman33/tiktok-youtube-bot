@@ -48,7 +48,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - ./cookies.txt:/app/cookies.txt:ro
+      - ./cookies.txt:/app/cookies.txt
 
   api:
     build:
@@ -69,7 +69,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - ./cookies.txt:/app/cookies.txt:ro
+      - ./cookies.txt:/app/cookies.txt
 
 volumes:
   postgres_data:
