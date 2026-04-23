@@ -1,0 +1,14 @@
+[Unit]
+Description=Video Downloader Telegram Bot
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/video-downloader
+EnvironmentFile=/opt/video-downloader/.env
+ExecStart=/opt/video-downloader/.venv/bin/python -m app.bot.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
