@@ -37,11 +37,11 @@ def extract_url(text: str) -> Optional[str]:
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     await message.answer(
-        "👋 Welcome to Video Downloader Bot!\n\n"
-        "Send me a TikTok or YouTube link and I'll download it for you.\n\n"
-        "📊 Daily limit: 5 downloads per day\n\n"
-        "Supported platforms:\n"
-        "• TikTok (videos & slideshows)\n"
+        "👋 Добро пожаловать в бота для скачивания Tiktok и Youtube видео!\n\n"
+        "Отправь мне ссылку на видео с Youtube или Tiktok, и я скачаю его для тебя.\n\n"
+        "📊 Дневной лимит: 5 загрузок в день\n\n"
+        "Поддерживающие платформы:\n"
+        "• TikTok (видео & фото)\n"
         "• YouTube"
     )
 
@@ -66,7 +66,7 @@ async def handle_link(message: Message, state: FSMContext):
                     user=user,
                     details=message.text,
                 )
-                await message.answer("⛔ You are banned from using this bot.")
+                await message.answer("⛔ Вы забанены в данном боте.")
                 return
 
             allowed, current, limit = await check_limit(db, user)
@@ -80,7 +80,7 @@ async def handle_link(message: Message, state: FSMContext):
                     details=message.text,
                 )
                 await message.answer(
-                    f"❌ Daily limit reached ({limit}/{limit}).\nCome back tomorrow!"
+                    f"❌ Исчерпан дневной лимит ({limit}/{limit}).\nВозвращайтесь завтра!!"
                 )
                 return
 
@@ -94,7 +94,7 @@ async def handle_link(message: Message, state: FSMContext):
                     details=message.text,
                 )
                 await message.answer(
-                    "❌ No valid URL found.\nPlease send a TikTok or YouTube link."
+                    "❌ Неправильная ссылка.\nПожалуйста отправьте ссылку с TikTok или YouTube."
                 )
                 return
 
@@ -108,7 +108,7 @@ async def handle_link(message: Message, state: FSMContext):
                     details=url,
                 )
                 await message.answer(
-                    "❌ Invalid URL.\nOnly TikTok and YouTube links are supported."
+                    "❌ Неправильная ссылка.\nПоддерживаются только ссылки на Tiktok и Youtube."
                 )
                 return
 
@@ -120,7 +120,7 @@ async def handle_link(message: Message, state: FSMContext):
                 user=user,
                 status="processing",
             )
-            await message.answer("⏳ Processing your request...")
+            await message.answer("⏳ Обработка запроса...")
 
             result = await download_media(url, telegram_id)
 
@@ -141,7 +141,7 @@ async def handle_link(message: Message, state: FSMContext):
                     user=user,
                     details=url,
                 )
-                await message.answer(f"❌ Error: {result.error}")
+                await message.answer(f"❌ Ошибка: {result.error} - отправьте разработчику")
                 cleanup_result(result)
                 return
 
@@ -181,7 +181,7 @@ async def handle_link(message: Message, state: FSMContext):
                                 if Path(file_path).exists()
                             ),
                         )
-                        await message.answer("✅ Slideshow sent!")
+                        await message.answer("✅ Фото отправлено!")
                     else:
                         await update_download_event(
                             db,
@@ -191,7 +191,7 @@ async def handle_link(message: Message, state: FSMContext):
                             title=result.title,
                             error_message="Could not process slideshow images",
                         )
-                        await message.answer("❌ Could not process images.")
+                        await message.answer("❌ Не удалось обработать изображения.")
 
                 elif result.files:
                     for file_path in result.files:
@@ -209,7 +209,7 @@ async def handle_link(message: Message, state: FSMContext):
                                 )
                             except Exception as e2:
                                 logger.error(f"Error sending document: {e2}")
-                                await message.answer(f"❌ Error sending file: {e}")
+                                await message.answer(f"❌ Ошибка отправления файлов: {e}")
                                 await update_download_event(
                                     db,
                                     download_event,
@@ -246,7 +246,7 @@ async def handle_link(message: Message, state: FSMContext):
                             if Path(file_path).exists()
                         ),
                     )
-                    await message.answer("✅ Video sent!")
+                    await message.answer("✅ Видео отправлено!")
                 else:
                     await update_download_event(
                         db,
@@ -256,7 +256,7 @@ async def handle_link(message: Message, state: FSMContext):
                         title=result.title,
                         error_message="No files downloaded",
                     )
-                    await message.answer("❌ No files downloaded.")
+                    await message.answer("❌ Файлы не загружены.")
 
             except Exception as e:
                 logger.error(f"Error sending media: {e}")
@@ -277,7 +277,7 @@ async def handle_link(message: Message, state: FSMContext):
                     user=user,
                     details=url,
                 )
-                await message.answer(f"❌ Error sending media: {e}")
+                await message.answer(f"❌ Ошибка отправки фото: {e}")
 
             finally:
                 cleanup_result(result)
@@ -292,7 +292,7 @@ async def handle_link(message: Message, state: FSMContext):
                 user=user if "user" in locals() else None,
                 details=message.text,
             )
-            await message.answer("❌ An error occurred. Please try again.")
+            await message.answer("❌ Произошла ошибка, попробуйте еще раз.")
 
 
 def setup(dp: Dispatcher):
