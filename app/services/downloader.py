@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 from enum import Enum
 from html import unescape
@@ -527,31 +529,8 @@ async def _download_tiktok_photo_post(url: str, temp_dir: Path) -> DownloadResul
 
 
 async def _download_youtube(url: str, temp_dir: Path) -> DownloadResult:
-    cookies_path = settings.YTDLP_COOKIES_PATH
-
-    ydl_opts = {
-        "format": "bestvideo+bestaudio/best",
-        "outtmpl": str(temp_dir / "%(id)s.%(ext)s"),
-        "quiet": True,
-        "nowarnings": True,
-        "merge_output_format": "mp4",
-        "noplaylist": True,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-    }
-
-    if os.path.exists(cookies_path):
-        ydl_opts["cookiefile"] = cookies_path
-
-    loop = asyncio.get_event_loop()
-
-    def _extract_info():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return info
-
     try:
-        info = await loop.run_in_executor(None, _extract_info)
+        info = await _run_ytdlp_cli_json(url)
     except Exception as e:
         return DownloadResult(success=False, error=classify_youtube_error(e))
 
@@ -559,88 +538,21 @@ async def _download_youtube(url: str, temp_dir: Path) -> DownloadResult:
         return DownloadResult(success=False, error="Could not extract video info")
 
     title = info.get("title", "youtube_video")
-    filesize = info.get("filesize") or info.get("filesize_approx")
-
-    if filesize and filesize > settings.TELEGRAM_MAX_SIZE:
-        try:
-            file_path = await download_best_quality(
-                url, temp_dir, settings.TELEGRAM_MAX_SIZE
-            )
-        except Exception as e:
-            return DownloadResult(
-                success=False,
-                error=f"Could not fit video into Telegram size limit: {e}",
-            )
-
-        return DownloadResult(
-            success=True,
-            media_type=MediaType.VIDEO,
-            files=[file_path],
-            title=title,
-        )
 
     try:
-        def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-        await loop.run_in_executor(None, _download)
+        file_path = await download_best_quality(url, temp_dir, settings.TELEGRAM_MAX_SIZE)
     except Exception as e:
-        logger.warning("Primary YouTube download failed, retrying with size fallback: %s", e)
-        classified_error = classify_youtube_error(e)
-        if classified_error != str(e):
-            return DownloadResult(success=False, error=classified_error)
-        try:
-            file_path = await download_best_quality(
-                url, temp_dir, settings.TELEGRAM_MAX_SIZE
-            )
-        except Exception as fallback_error:
-            return DownloadResult(
-                success=False,
-                error=classify_youtube_error(fallback_error),
-            )
-
-        return DownloadResult(
-            success=True,
-            media_type=MediaType.VIDEO,
-            files=[file_path],
-            title=title,
-        )
-
-    downloaded_files = list(temp_dir.glob("*"))
-    video_files = [
-        f
-        for f in downloaded_files
-        if f.is_file()
-        and f.stat().st_size > 0
-        and f.suffix.lower() in VIDEO_EXTENSIONS
-        and f.stat().st_size <= settings.TELEGRAM_MAX_SIZE
-    ]
-
-    if not video_files:
-        try:
-            file_path = await download_best_quality(url, temp_dir, settings.TELEGRAM_MAX_SIZE)
-        except Exception as e:
-            return DownloadResult(success=False, error=classify_youtube_error(e))
-
-        return DownloadResult(
-            success=True,
-            media_type=MediaType.VIDEO,
-            files=[file_path],
-            title=title,
-        )
+        return DownloadResult(success=False, error=classify_youtube_error(e))
 
     return DownloadResult(
         success=True,
         media_type=MediaType.VIDEO,
-        files=[str(f) for f in video_files],
+        files=[file_path],
         title=title,
     )
 
 
 async def download_best_quality(url: str, temp_dir: Path, max_size: int) -> str:
-    cookies_path = settings.YTDLP_COOKIES_PATH
-
     formats = [
         "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
         "bestvideo[height<=720]+bestaudio/best[height<=720]",
@@ -650,28 +562,8 @@ async def download_best_quality(url: str, temp_dir: Path, max_size: int) -> str:
     ]
 
     for fmt in formats:
-        ydl_opts = {
-            "format": fmt,
-            "outtmpl": str(temp_dir / "%(id)s.%(ext)s"),
-            "quiet": True,
-            "nowarnings": True,
-            "merge_output_format": "mp4",
-            "noplaylist": True,
-            "js_runtimes": {"node": {}},
-            "remote_components": ["ejs:github"],
-        }
-
-        if os.path.exists(cookies_path):
-            ydl_opts["cookiefile"] = cookies_path
-
-        loop = asyncio.get_event_loop()
-
-        def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
         try:
-            await loop.run_in_executor(None, _download)
+            await _run_ytdlp_cli_download(url, temp_dir, fmt)
             downloaded_files = list(temp_dir.glob("*"))
             video_files = [
                 f
@@ -688,3 +580,57 @@ async def download_best_quality(url: str, temp_dir: Path, max_size: int) -> str:
             continue
 
     raise Exception("Could not download video within size limit")
+
+
+def _get_ytdlp_binary() -> str:
+    return shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp"
+
+
+def _build_ytdlp_base_command() -> list[str]:
+    command = [_get_ytdlp_binary(), "--no-playlist", "--no-warnings"]
+    if os.path.exists(settings.YTDLP_COOKIES_PATH):
+        command.extend(["--cookies", settings.YTDLP_COOKIES_PATH])
+    return command
+
+
+async def _run_ytdlp_cli_json(url: str) -> dict:
+    command = _build_ytdlp_base_command() + ["--dump-single-json", "--skip-download", url]
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise Exception(stderr.decode("utf-8", errors="ignore").strip() or "yt-dlp failed")
+
+    return json.loads(stdout.decode("utf-8", errors="ignore"))
+
+
+async def _run_ytdlp_cli_download(url: str, temp_dir: Path, fmt: str) -> None:
+    output_template = str(temp_dir / "%(id)s.%(ext)s")
+    command = _build_ytdlp_base_command() + [
+        "-f",
+        fmt,
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        output_template,
+        url,
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise Exception(
+            stderr.decode("utf-8", errors="ignore").strip()
+            or stdout.decode("utf-8", errors="ignore").strip()
+            or "yt-dlp download failed"
+        )
